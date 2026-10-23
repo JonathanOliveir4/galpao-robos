@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: galpao
+      POSTGRES_PASSWORD: galpao
+      POSTGRES_DB: galpao
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U galpao"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+  api:
+    build: ./api
+    depends_on:
+      db:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+psycopg2://galpao:galpao@db:5432/galpao
+      MQTT_HOST: mosquitto
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api/app:/app/app
+      - ./dashboard:/app/dashboard
+
+  simulador:
+    build: ./simulador
+    depends_on:
+      - mosquitto
+      - api
+    environment:
+      MQTT_HOST: mosquitto
+      ROBO_IDS: R01,R02,R03
+      TICK: "0.4"
+
+volumes:
+  pgdata:

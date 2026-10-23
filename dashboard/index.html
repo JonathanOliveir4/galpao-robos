@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Galpão 4.0 – Gêmeo Digital</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #f4f5f7; color: #222; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  .layout { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  canvas { background: #fff; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; max-width: 100%; }
+  .painel { min-width: 260px; flex: 1; }
+  .card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+  .card h2 { font-size: 14px; margin: 0 0 8px; }
+  .robo { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
+  .bar { width: 70px; height: 8px; background: #ddd; border-radius: 4px; overflow: hidden; align-self: center; }
+  .bar > div { height: 100%; background: #2e9d57; }
+  #msg { font-size: 13px; min-height: 18px; }
+  .leg span { display: inline-block; width: 10px; height: 10px; margin: 0 4px 0 10px; border-radius: 2px; }
+  ul { margin: 0; padding-left: 18px; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Galpão 4.0 – Gêmeo Digital</h1>
+<div class="layout">
+  <div>
+    <canvas id="c"></canvas>
+    <div class="leg" style="font-size:12px;margin-top:6px">
+      <span style="background:#b08968"></span>prateleira
+      <span style="background:#f2a33a"></span>com estoque
+      <span style="background:#6ea8e0"></span>doca
+      <span style="background:#7cc98f"></span>carregador
+      <span style="background:#d33"></span>robô
+    </div>
+  </div>
+  <div class="painel">
+    <div class="card"><h2>Nova ordem</h2>
+      <div id="msg">Clique numa prateleira laranja (origem) e depois numa prateleira de destino.</div>
+    </div>
+    <div class="card"><h2>Robôs</h2><div id="robos"></div></div>
+    <div class="card"><h2>Ordens recentes</h2><ul id="ordens"></ul></div>
+  </div>
+</div>
+<script>
+const CELL = 30;
+const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+let mapa = null, robos = {}, origem = null;
+
+const msg = t => document.getElementById('msg').textContent = t;
+
+async function carregarMapa() {
+  mapa = await (await fetch('/mapa')).json();
+  canvas.width = mapa.largura * CELL; canvas.height = mapa.altura * CELL;
+  desenhar();
+}
+async function carregarRobos() {
+  (await (await fetch('/robos')).json()).forEach(r => robos[r.id] = r);
+  desenhar(); listarRobos();
+}
+async function carregarOrdens() {
+  const o = await (await fetch('/ordens')).json();
+  document.getElementById('ordens').innerHTML = o.slice(0, 8)
+    .map(x => `<li>#${x.id} – ${x.status}${x.robo_id ? ' (' + x.robo_id + ')' : ''}</li>`).join('');
+}
+function listarRobos() {
+  document.getElementById('robos').innerHTML = Object.values(robos).sort((a, b) => a.id.localeCompare(b.id))
+    .map(r => `<div class="robo"><span>${r.id} · ${r.status}</span>
+      <span class="bar"><div style="width:${r.bateria}%"></div></span><span>${r.bateria}%</span></div>`).join('');
+}
+function desenhar() {
+  if (!mapa) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const cor = { corredor: '#fafafa', prateleira: '#b08968', doca: '#6ea8e0', carregador: '#7cc98f' };
+  for (const p of mapa.posicoes) {
+    ctx.fillStyle = cor[p.tipo];
+    if (p.tipo === 'prateleira' && p.estoque.length) ctx.fillStyle = '#f2a33a';
+    ctx.fillRect(p.x * CELL, p.y * CELL, CELL, CELL);
+    ctx.strokeStyle = '#e3e3e3'; ctx.strokeRect(p.x * CELL, p.y * CELL, CELL, CELL);
+    if (p.estoque.length) {
+      ctx.fillStyle = '#222'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(p.estoque.reduce((s, e) => s + e.qtd, 0), p.x * CELL + CELL / 2, p.y * CELL + CELL / 2 + 4);
+    }
+  }
+  if (origem) { ctx.strokeStyle = '#06c'; ctx.lineWidth = 3;
+    ctx.strokeRect(origem.x * CELL + 1, origem.y * CELL + 1, CELL - 2, CELL - 2); ctx.lineWidth = 1; }
+  for (const r of Object.values(robos)) {
+    ctx.fillStyle = r.status === 'em_transito' ? '#d33' : '#933';
+    ctx.beginPath(); ctx.arc(r.x * CELL + CELL / 2, r.y * CELL + CELL / 2, CELL / 2 - 4, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(r.id.replace('R', ''), r.x * CELL + CELL / 2, r.y * CELL + CELL / 2 + 3);
+  }
+}
+canvas.addEventListener('click', async ev => {
+  const b = canvas.getBoundingClientRect();
+  const x = Math.floor((ev.clientX - b.left) * (canvas.width / b.width) / CELL);
+  const y = Math.floor((ev.clientY - b.top) * (canvas.height / b.height) / CELL);
+  const p = mapa.posicoes.find(q => q.x === x && q.y === y);
+  if (!p || p.tipo !== 'prateleira') { origem = null; msg('Selecione uma prateleira.'); return desenhar(); }
+  if (!origem) {
+    if (!p.estoque.length) return msg('Essa prateleira está vazia. Escolha uma laranja.');
+    origem = p; msg(`Origem ${p.codigo} (${p.estoque[0].nome}). Agora clique no destino.`); return desenhar();
+  }
+  if (p.id === origem.id) { origem = null; msg('Seleção cancelada.'); return desenhar(); }
+  const r = await fetch('/ordens', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ produto_id: origem.estoque[0].produto_id, origem_id: origem.id, destino_id: p.id, quantidade: 1 }) });
+  const j = await r.json();
+  msg(r.ok ? `Ordem #${j.id}: ${j.status}${j.robo_id ? ' → ' + j.robo_id : ' (aguardando robô)'}` : `Erro: ${j.detail}`);
+  origem = null; carregarOrdens(); desenhar();
+});
+
+function conectarWS() {
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.tipo === 'robo') { robos[m.id] = m; desenhar(); listarRobos(); }
+    if (m.tipo === 'ordem') { carregarOrdens(); if (m.status === 'concluida') carregarMapa(); }
+  };
+  ws.onclose = () => setTimeout(conectarWS, 2000);
+}
+carregarMapa(); carregarRobos(); carregarOrdens(); conectarWS();
+</script>
+</body>
+</html>

@@ -79,7 +79,7 @@ class OrdemServico(Base):
     origem_id: Mapped[int] = mapped_column(ForeignKey("posicao.id"))
     destino_id: Mapped[int] = mapped_column(ForeignKey("posicao.id"))
     quantidade: Mapped[int] = mapped_column(default=1)
-    robo_id: Mapped[str | None] = mapped_column(ForeignKey("robo.id"), nullable=True)
+    robo_id: Mapped[str | None] = mapped_column(String(10), ForeignKey("robo.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pendente")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=agora)
     concluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

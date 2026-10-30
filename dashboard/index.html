@@ -18,6 +18,20 @@
   #msg { font-size: 13px; min-height: 18px; }
   .leg span { display: inline-block; width: 10px; height: 10px; margin: 0 4px 0 10px; border-radius: 2px; }
   ul { margin: 0; padding-left: 18px; font-size: 13px; }
+  input, select, button { padding: 8px; border: 1px solid #ccd0d5; border-radius: 5px; font: inherit; }
+  button { cursor: pointer; background: #245da8; color: white; border: 0; }
+  button.sec { background: #687386; } button.del { background: #b43b3b; }
+  .formgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; }
+  .tablewrap { overflow-x:auto; } table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { padding:7px; border-bottom:1px solid #e5e7eb; text-align:left; }
+  th { background:#f7f8fa; } .actions { display:flex; gap:5px; flex-wrap:wrap; }
+  .metricas { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:8px; }
+  .metrica { background:#f4f7fb; padding:10px; border-radius:6px; }
+  .metrica strong { display:block; font-size:20px; } .muted { color:#687386; font-size:12px; }
+  .routebar { display:grid; grid-template-columns:minmax(110px,1fr) 3fr auto; gap:8px; align-items:center; margin:7px 0; font-size:12px; }
+  .routebar .track { height:12px; background:#e8edf3; border-radius:8px; overflow:hidden; }
+  .routebar .fill { height:100%; background:#4386c6; }
+  #crudMsg, #analiseMsg { font-size:13px; min-height:18px; }
 </style>
 </head>
 <body>
@@ -40,6 +54,39 @@
     <div class="card"><h2>Robôs</h2><div id="robos"></div></div>
     <div class="card"><h2>Ordens recentes</h2><ul id="ordens"></ul></div>
   </div>
+</div>
+<div class="card">
+  <h2>Gerenciamento de produtos — CRUD</h2>
+  <form id="produtoForm" class="formgrid">
+    <input id="produtoId" type="hidden">
+    <input id="sku" placeholder="SKU (ex.: CAB-001)" maxlength="30" required>
+    <input id="nome" placeholder="Nome do produto" maxlength="100" required>
+    <input id="peso" type="number" min="0.01" step="0.01" placeholder="Peso (kg)" value="1" required>
+    <select id="fragil"><option value="false">Não frágil</option><option value="true">Frágil</option></select>
+    <button type="submit">Salvar produto</button>
+    <button type="button" class="sec" onclick="limparProdutoForm()">Limpar</button>
+  </form>
+  <p id="crudMsg"></p>
+  <div class="tablewrap"><table><thead><tr><th>SKU</th><th>Produto</th><th>Peso</th><th>Frágil</th><th>Ações</th></tr></thead><tbody id="produtosTabela"></tbody></table></div>
+</div>
+<div class="card">
+  <h2>Gerenciamento de estoque — inserir, consultar, alterar e remover</h2>
+  <form id="estoqueForm" class="formgrid">
+    <select id="estoqueProduto" required><option value="">Selecione o produto</option></select>
+    <select id="estoquePosicao" required><option value="">Selecione a prateleira</option></select>
+    <input id="estoqueQtd" type="number" min="1" step="1" placeholder="Quantidade" required>
+    <button type="submit">Salvar estoque</button>
+  </form>
+  <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>SKU</th><th>Produto</th><th>Posição</th><th>Quantidade</th><th>Ações</th></tr></thead><tbody id="estoqueTabela"></tbody></table></div>
+</div>
+<div class="card">
+  <h2>Análise de dados públicos — ANTT / CIOT</h2>
+  <p class="muted">Indicadores nacionais de operações de transporte registradas por município de origem/destino e natureza da carga.</p>
+  <div id="analiseMsg">Carregando indicadores...</div>
+  <div class="metricas" id="analiseMetricas"></div>
+  <h2 style="margin-top:14px">Principais rotas por volume de CIOTs</h2>
+  <div id="rotasGrafico"></div>
+  <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Origem</th><th>Destino</th><th>CIOTs</th></tr></thead><tbody id="rotasTabela"></tbody></table></div>
 </div>
 <script>
 const CELL = 30;
@@ -117,7 +164,65 @@ function conectarWS() {
   };
   ws.onclose = () => setTimeout(conectarWS, 2000);
 }
+
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(url, options={}) {
+  const r = await fetch(url, {headers:{'Content-Type':'application/json', ...(options.headers||{})}, ...options});
+  const data = r.status === 204 ? null : await r.json().catch(()=>null);
+  if (!r.ok) throw new Error(data?.detail || data?.mensagem || `Erro HTTP ${r.status}`);
+  return data;
+}
+function limparProdutoForm() { document.getElementById('produtoForm').reset(); document.getElementById('produtoId').value=''; document.getElementById('peso').value='1'; }
+async function carregarProdutos() {
+  const produtos = await api('/produtos');
+  document.getElementById('produtosTabela').innerHTML = produtos.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.nome)}</td><td>${Number(p.peso_kg).toFixed(2)} kg</td><td>${p.fragil?'Sim':'Não'}</td><td><div class="actions"><button class="sec" onclick="editarProduto(${p.id})">Editar</button><button class="del" onclick="removerProduto(${p.id})">Excluir</button></div></td></tr>`).join('') || '<tr><td colspan="5">Nenhum produto cadastrado.</td></tr>';
+  document.getElementById('estoqueProduto').innerHTML = '<option value="">Selecione o produto</option>' + produtos.map(p=>`<option value="${p.id}">${esc(p.sku)} — ${esc(p.nome)}</option>`).join('');
+}
+async function editarProduto(id) {
+  const p = (await api('/produtos')).find(x=>x.id===id); if(!p) return;
+  document.getElementById('produtoId').value=p.id; document.getElementById('sku').value=p.sku; document.getElementById('nome').value=p.nome;
+  document.getElementById('peso').value=p.peso_kg; document.getElementById('fragil').value=String(p.fragil); window.scrollTo({top:0,behavior:'smooth'});
+}
+async function removerProduto(id) {
+  if(!confirm('Confirma a exclusão deste produto?')) return;
+  try { await api(`/produtos/${id}`,{method:'DELETE'}); document.getElementById('crudMsg').textContent='Produto excluído.'; await carregarProdutos(); }
+  catch(e){document.getElementById('crudMsg').textContent=e.message;}
+}
+document.getElementById('produtoForm').addEventListener('submit', async e=>{
+  e.preventDefault(); const id=document.getElementById('produtoId').value;
+  const body={sku:document.getElementById('sku').value.trim(),nome:document.getElementById('nome').value.trim(),peso_kg:Number(document.getElementById('peso').value),fragil:document.getElementById('fragil').value==='true'};
+  try { await api(id?`/produtos/${id}`:'/produtos',{method:id?'PUT':'POST',body:JSON.stringify(body)}); document.getElementById('crudMsg').textContent=id?'Produto atualizado.':'Produto cadastrado.'; limparProdutoForm(); await carregarProdutos(); }
+  catch(err){document.getElementById('crudMsg').textContent=err.message;}
+});
+async function carregarPosicoes() {
+  const ps=await api('/posicoes'); document.getElementById('estoquePosicao').innerHTML='<option value="">Selecione a prateleira</option>'+ps.filter(p=>p.tipo==='prateleira').map(p=>`<option value="${p.id}">${esc(p.codigo)}</option>`).join('');
+}
+async function carregarEstoque() {
+  const rows=await api('/estoque'); document.getElementById('estoqueTabela').innerHTML=rows.map(e=>`<tr><td>${esc(e.sku)}</td><td>${esc(e.produto)}</td><td>${esc(e.posicao)}</td><td>${e.quantidade}</td><td><div class="actions"><button class="sec" onclick="alterarEstoque(${e.id},${e.quantidade})">Alterar</button><button class="del" onclick="removerEstoque(${e.id})">Remover</button></div></td></tr>`).join('')||'<tr><td colspan="5">Estoque vazio.</td></tr>';
+}
+document.getElementById('estoqueForm').addEventListener('submit',async e=>{
+  e.preventDefault(); const body={produto_id:Number(document.getElementById('estoqueProduto').value),posicao_id:Number(document.getElementById('estoquePosicao').value),quantidade:Number(document.getElementById('estoqueQtd').value)};
+  try { await api('/estoque',{method:'POST',body:JSON.stringify(body)}); e.target.reset(); await carregarEstoque(); await carregarMapa(); msg('Estoque salvo com sucesso.'); }
+  catch(err){msg('Erro no estoque: '+err.message);}
+});
+async function alterarEstoque(id,atual){const n=prompt('Nova quantidade:',atual);if(n===null)return;const qtd=Number(n);if(!Number.isInteger(qtd)||qtd<0)return alert('Informe um número inteiro maior ou igual a zero.');try{await api(`/estoque/${id}?quantidade=${qtd}`,{method:'PUT'});await carregarEstoque();await carregarMapa();}catch(e){alert(e.message);}}
+async function removerEstoque(id){if(!confirm('Remover este registro de estoque?'))return;try{await api(`/estoque/${id}`,{method:'DELETE'});await carregarEstoque();await carregarMapa();}catch(e){alert(e.message);}}
+async function carregarAnalise(){
+  const a=await api('/analise/resumo'); const msgEl=document.getElementById('analiseMsg');
+  if(!a.disponivel){msgEl.textContent=a.mensagem;return;}
+  msgEl.textContent=`Dados importados: ${a.indicadores.registros} registros.`;
+  const i=a.indicadores; const fmt=n=>Number(n).toLocaleString('pt-BR',{maximumFractionDigits:2});
+  document.getElementById('analiseMetricas').innerHTML=[['Total de CIOTs',fmt(i.total_ciots)],['Maior volume por rota',fmt(i.max_ciots)],['Menor volume por rota',fmt(i.min_ciots)],['Média de CIOTs por rota',fmt(i.media_ciots)],['Transportadores (soma)',fmt(i.total_transportadores)]].map(x=>`<div class="metrica"><span class="muted">${x[0]}</span><strong>${x[1]}</strong></div>`).join('');
+  const maior=Math.max(1,...a.rotas.map(r=>Number(r.total_ciots)));
+  document.getElementById('rotasGrafico').innerHTML=a.rotas.map(r=>{
+    const pct=Math.max(1,Number(r.total_ciots)/maior*100);
+    return `<div class="routebar"><span>${esc(r.municipio_origem)}-${esc(r.uf_origem)} → ${esc(r.municipio_destino)}-${esc(r.uf_destino)}</span><div class="track"><div class="fill" style="width:${pct}%"></div></div><strong>${fmt(r.total_ciots)}</strong></div>`;
+  }).join('') || '<p class="muted">Sem rotas disponíveis.</p>';
+  document.getElementById('rotasTabela').innerHTML=a.rotas.map(r=>`<tr><td>${esc(r.municipio_origem)} / ${esc(r.uf_origem)}</td><td>${esc(r.municipio_destino)} / ${esc(r.uf_destino)}</td><td>${fmt(r.total_ciots)}</td></tr>`).join('');
+}
 carregarMapa(); carregarRobos(); carregarOrdens(); conectarWS();
+carregarProdutos().catch(e=>document.getElementById('crudMsg').textContent=e.message);
+carregarPosicoes().catch(e=>msg(e.message)); carregarEstoque().catch(e=>msg(e.message)); carregarAnalise().catch(e=>document.getElementById('analiseMsg').textContent=e.message);
 </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 from sqlalchemy import select
 
@@ -42,8 +42,12 @@ def on_mqtt_message(robo_id: str, data: dict):
 
         # Evita que um heartbeat "disponivel" enviado antes de o robô receber o comando
         # desfaça o despacho recém-feito.
-        recem_despachado = (robo.despachado_em is not None
-                            and agora() - robo.despachado_em.astimezone(agora().tzinfo) < GRACA_DESPACHO)
+        recem_despachado = False
+        if robo.despachado_em is not None:
+            desp = robo.despachado_em
+            if desp.tzinfo is None:   # MySQL devolve datas sem fuso (gravamos em UTC)
+                desp = desp.replace(tzinfo=timezone.utc)
+            recem_despachado = agora() - desp < GRACA_DESPACHO
         if not (data["status"] == "disponivel" and robo.status == "em_transito"
                 and evento is None and recem_despachado):
             robo.status = data["status"]

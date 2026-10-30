@@ -1,0 +1,82 @@
+erDiagram
+    GALPAO ||--o{ SETOR : possui
+    GALPAO ||--o{ POSICAO : contem
+    SETOR ||--o{ POSICAO : organiza
+    PRODUTO ||--o{ ESTOQUE : armazenado_em
+    POSICAO ||--o{ ESTOQUE : guarda
+    PRODUTO ||--o{ ORDEM_SERVICO : movimentado_em
+    POSICAO ||--o{ ORDEM_SERVICO : origem
+    POSICAO ||--o{ ORDEM_SERVICO : destino
+    ROBO ||--o{ ORDEM_SERVICO : executa
+
+    GALPAO {
+        int id PK
+        varchar nome
+        int largura
+        int altura
+    }
+    SETOR {
+        int id PK
+        int galpao_id FK
+        varchar nome
+    }
+    POSICAO {
+        int id PK
+        int galpao_id FK
+        int setor_id FK
+        varchar codigo
+        int x
+        int y
+        int z
+        varchar tipo
+    }
+    PRODUTO {
+        int id PK
+        varchar sku UK
+        varchar nome
+        float peso_kg
+        boolean fragil
+    }
+    ESTOQUE {
+        int id PK
+        int produto_id FK
+        int posicao_id FK
+        int quantidade
+    }
+    ROBO {
+        varchar id PK
+        varchar status
+        float bateria
+        int x
+        int y
+    }
+    ORDEM_SERVICO {
+        int id PK
+        int produto_id FK
+        int origem_id FK
+        int destino_id FK
+        int quantidade
+        varchar robo_id FK
+        varchar status
+    }
+    LOG_MOVIMENTACAO {
+        int id PK
+        datetime timestamp
+        varchar tipo
+        varchar robo_id
+        int ordem_id
+        int produto_id
+    }
+
+    CIOT_MENSAL {
+        bigint id PK
+        date mes_referencia
+        varchar municipio_origem
+        char uf_origem
+        varchar municipio_destino
+        char uf_destino
+        varchar ncm_carga
+        bigint quantidade_ciots
+        bigint quantidade_trc
+        bigint quantidade_contratantes
+    }
